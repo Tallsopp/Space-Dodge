@@ -1,0 +1,311 @@
+using System;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
+using System.Collections.Generic;
+using System.Timers;
+
+namespace Space_Dodge
+{
+    public class Space_Dodge : Game
+    {
+        GraphicsDeviceManager graphics;
+        SpriteBatch spriteBatch;
+        const int GAME_HEIGHT = 720;
+        const int GAME_WIDTH = 1280;
+
+        Spaceship spaceship;
+
+        Background background1;
+        Background background2;
+
+        List<List<Meteor>> meteors;
+        Timer gameTimer;
+        int holeLength;
+        int meteorVelocity;
+        Random rng;
+
+        List<Bullet> bullets;
+        KeyboardState previousState;
+
+        List<Powerup> powerups;
+        SpriteFont basicFont;
+        int score;
+        string difficulty;
+
+        public Space_Dodge()
+        {
+            graphics = new GraphicsDeviceManager(this);
+            graphics.PreferredBackBufferHeight = GAME_HEIGHT;
+            graphics.PreferredBackBufferWidth = GAME_WIDTH;
+            Content.RootDirectory = "Content";
+        }
+
+        protected override void Initialize()
+        {
+            bullets = new List<Bullet>();
+            meteors = new List<List<Meteor>>();
+            powerups = new List<Powerup>();
+            rng = new Random();
+            gameTimer = new Timer(1500);
+            gameTimer.Elapsed += delegate
+            {
+                SpawnMeteorWall();
+                SpawnPowerups();
+            };
+            gameTimer.Enabled = true;
+            meteorVelocity = 250;
+            holeLength = 8;
+            previousState = Keyboard.GetState();
+            score = 0;
+            difficulty = "Easy";
+            base.Initialize();
+        }
+
+        private void SpawnPowerups()
+        {
+            if (rng.Next(0, 2) == 1)
+            {
+                powerups.Add(new Powerup(new Vector2(rng.Next(1720, 2000), rng.Next(0, GAME_HEIGHT - 37)), Content.Load<Texture2D>("powerup"), meteorVelocity));
+            }
+        }
+
+        protected override void LoadContent()
+        {
+            spriteBatch = new SpriteBatch(GraphicsDevice);
+            spaceship = new Spaceship(new Vector2(20, GAME_HEIGHT/2), Content.Load<Texture2D>("spaceship"));
+            background1 = new Background(new Vector2(0, -90), Content.Load<Texture2D>("space_background"));
+            background2 = new Background(new Vector2(1453, -90), Content.Load<Texture2D>("space_background_reversed"));
+            basicFont = Content.Load<SpriteFont>("font");
+        }
+
+        protected override void Update(GameTime gameTime)
+        {
+            if (Keyboard.GetState().IsKeyDown(Keys.Escape))
+                Exit();
+
+            score++;
+
+            float elapsed = (float)gameTime.ElapsedGameTime.TotalSeconds;
+            spaceship.Velocity = new Vector2(0, 0);
+            background1.Velocity = new Vector2(-50,0);
+            background2.Velocity = new Vector2(-50, 0);
+            GameOverCollision();
+            CheckCollisionBulletCollision();
+            CheckPowerupCollision();
+            SetDifficulty();
+            RemoveNotVisible();
+            KeyHandler();
+            UpdateEntities(elapsed);
+
+            base.Update(gameTime);
+        }
+
+        private void SetDifficulty()
+        {
+            if(score>=1500 && difficulty == "Easy")
+            {
+                difficulty = "Medium";
+                meteorVelocity = 360;
+                ChangeMeteorSpeed();
+                ChangePowerupSpeed();
+                holeLength -= 3;
+            }
+
+            if(score>= 3000 && difficulty == "Medium")
+            {
+                difficulty = "Hard";
+                meteorVelocity = 400;
+                ChangeMeteorSpeed();
+                ChangePowerupSpeed();
+                holeLength -= 3;
+            }
+        }
+
+        private void ChangePowerupSpeed()
+        {
+            foreach(var powerup in powerups)
+            {
+                powerup.Velocity = new Vector2(-meteorVelocity, 0);
+            }
+        }
+
+        private void ChangeMeteorSpeed()
+        {
+            foreach(var wall in meteors)
+            {
+                foreach(var meteor in wall)
+                {
+                    meteor.Velocity = new Vector2(-meteorVelocity, 0);
+                }
+            }
+        }
+
+        private void CheckPowerupCollision()
+        {
+            foreach(var powerup in powerups)
+            {
+                if (powerup.Bounds.Intersects(spaceship.Bounds))
+                {
+                    powerup.IsVisible = false;
+                    spaceship.BulletCount++;
+                }
+            }
+        }
+
+        private void RemoveNotVisible()
+        {
+            for(int i = 0; i < meteors.Count; i++)
+            {
+                var currentWall = meteors[i];
+                for(int j = 0; j < currentWall.Count; j++)
+                {
+                    if (!currentWall[j].IsVisible)
+                    {
+                        currentWall.RemoveAt(j);
+                    }
+                }
+            }
+
+            for (int i = 0; i < bullets.Count; i++){
+                if (!bullets[i].IsVisible)
+                {
+                    bullets.RemoveAt(i);
+                }
+            }
+
+            for(int i = 0; i < powerups.Count; i++)
+            {
+                if (!powerups[i].IsVisible)
+                {
+                    powerups.RemoveAt(i);
+                }
+            }
+        }
+
+        private void CheckCollisionBulletCollision()
+        {
+            foreach(var wall in meteors)
+            {
+                foreach(var meteor in wall)
+                {
+                    foreach(var bullet in bullets)
+                    {
+                        if (meteor.Bounds.Intersects(bullet.Bounds))
+                        {
+                            bullet.IsVisible = false;
+                            score += 100;
+                            foreach (var meteorToDestroy in wall)
+                            {
+                                meteorToDestroy.IsVisible = false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private void GameOverCollision()
+        {
+            foreach(var wall in meteors)
+            {
+                foreach(var meteor in wall)
+                {
+                    if (meteor.Bounds.Intersects(spaceship.Bounds))
+                    {
+                        Exit();
+                    }
+                }
+            }
+        }
+
+        private void UpdateEntities(float elapsed)
+        {
+            spaceship.Update(elapsed);
+            background1.Update(elapsed);
+            background2.Update(elapsed);
+            foreach(var wall in meteors)
+            {
+                foreach(var meteor in wall)
+                {
+                    meteor.Update(elapsed);
+                }
+            }
+            foreach(var bullet in bullets)
+            {
+                bullet.Update(elapsed);
+            }
+            foreach(var powerup in powerups)
+            {
+                powerup.Update(elapsed);
+            }
+        }
+
+        private void SpawnMeteorWall()
+        {
+            List<Meteor> currentWall = new List<Meteor>();
+            int holePosition = rng.Next(0, 25 - holeLength);
+            for(int i = 0; i < 25; i++)
+            {
+                if(i<=holePosition || i >= holePosition + holeLength)
+                {
+                    currentWall.Add(new Meteor(new Vector2(GAME_WIDTH, i * 28 + 10), Content.Load<Texture2D>("rock"), meteorVelocity));
+                }
+            }
+            meteors.Add(currentWall);
+        }
+
+        private void KeyHandler()
+        {
+            if (Keyboard.GetState().IsKeyDown(Keys.Down))
+            {
+                spaceship.Velocity.Y = 500;
+                background1.Velocity.Y = -20;
+                background2.Velocity.Y = -20;
+            }
+            if(Keyboard.GetState().IsKeyDown(Keys.Up))
+            {
+                spaceship.Velocity.Y = -500;
+                background1.Velocity.Y = +20;
+                background2.Velocity.Y = +20;
+            }
+            if (Keyboard.GetState().IsKeyDown(Keys.Space) && previousState.IsKeyUp(Keys.Space) && spaceship.BulletCount > 0)
+            {
+                spaceship.BulletCount--;
+                bullets.Add(new Bullet(new Vector2(spaceship.Location.X, spaceship.Location.Y + 15), Content.Load<Texture2D>("rocket")));
+            }
+            previousState = Keyboard.GetState();
+        }
+
+        protected override void Draw(GameTime gameTime)
+        {
+            GraphicsDevice.Clear(Color.Black);
+
+            spriteBatch.Begin();
+            background1.Draw(spriteBatch);
+            background2.Draw(spriteBatch);
+            spaceship.Draw(spriteBatch);
+            foreach(var wall in meteors)
+            {
+                foreach(var meteor in wall)
+                {
+                    meteor.Draw(spriteBatch);
+                }
+            }
+            foreach(var bullet in bullets)
+            {
+                bullet.Draw(spriteBatch);
+            }
+            foreach(var powerup in powerups)
+            {
+                powerup.Draw(spriteBatch);
+            }
+            spriteBatch.DrawString(basicFont, "Bullets: " + spaceship.BulletCount, new Vector2(0, 0), Color.AliceBlue);
+            spriteBatch.DrawString(basicFont, "Score: " + score, new Vector2(0, 20), Color.DeepPink);
+            spriteBatch.DrawString(basicFont, "Difficulty: " + difficulty, new Vector2(0, 40), Color.MonoGameOrange);
+            spriteBatch.End();
+
+            base.Draw(gameTime);
+        }
+    }
+}
